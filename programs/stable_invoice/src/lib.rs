@@ -6,7 +6,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"); // TODO: replace with program keypair after first `anchor keys sync`
+declare_id!("36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU"); // TODO: replace with program keypair after first `anchor keys sync`
 
 #[program]
 pub mod stable_invoice {
