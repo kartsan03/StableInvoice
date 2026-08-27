@@ -4,6 +4,9 @@
 resolution = true
 skip-lint = false
 
+[programs.localnet]
+stable_invoice = "36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU"
+
 [programs.devnet]
 stable_invoice = "36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU"
 
@@ -11,4 +14,5 @@ stable_invoice = "36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU"
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
-[hooks]
+[scripts]
+test = "npx ts-mocha -p ./tests/tsconfig.json -t 1000000 tests/**/*.ts"
