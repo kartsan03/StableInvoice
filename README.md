@@ -4,25 +4,30 @@ Escrowed USDC invoicing for freelancers on Solana. A client funds a program-cont
 escrow (PDA) upfront; the freelancer gets paid as milestones are accepted, and every
 settlement leaves an on-chain record.
 
-**Status:** devnet MVP skeleton — instruction contexts are real, bodies are stubs.
-Toolchain verified: compiles clean on Rust 1.98 / Agave CLI 4.2.1 / Anchor 1.1.2.
+**Status:** M1 is implemented. `initialize_invoice`, `fund_escrow`, and `accept_milestone`
+run with CPI token transfers and status guards. `settle` is still a stub (M2). Bankrun
+suite: **9/9 passing**. Not deployed to devnet yet.
+
+Program id (localnet / planned devnet): `36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU`
 
 ## Instructions
 
-- **initialize_invoice** — freelancer creates an invoice: N milestones × fixed USDC amount, tied to a USDC mint. PDA seeds: `[b"invoice", freelancer, index_le]`.
-- **fund_escrow** *(stub)* — client deposits the full invoice value into an invoice-owned escrow ATA before work starts. Status → `Funded`.
-- **accept_milestone** *(stub)* — client signs off on completed milestones one at a time.
-- **settle** *(stub)* — releases payment for accepted milestones to the freelancer and writes the on-chain settlement record. Status → `Settled`.
+- **initialize_invoice** — freelancer creates an invoice: N milestones × fixed USDC amount, tied to a mint. PDA seeds: `[b"invoice", freelancer, index_le]`. Status → `Draft`.
+- **fund_escrow** — client deposits the full invoice value (`amount × milestones`) into an invoice-owned escrow ATA. The vault ATA is created idempotently. Status → `Funded`; the payer is recorded as client.
+- **accept_milestone** — client signs off on completed milestones one at a time. No token movement. Status stays `Funded`.
+- **settle** *(stub — M2)* — will drain vault → freelancer ATA and write a settlement PDA. Currently returns `NotImplemented`.
 
-## Roadmap to mainnet-beta
+MVP note: whoever funds becomes the invoice's client (not fixed at create time).
 
-| Milestone | What | Where in code |
+## Scope
+
+| Slice | What | State |
 |---|---|---|
-| M1 | Fill `fund_escrow`, `accept_milestone`, `settle` bodies (CPI transfers, status guards); devnet deploy; integration tests | `programs/stable_invoice/src/lib.rs` |
-| M2 | Dispute path end-to-end: `cancel_refund` (client-side, pre-settle, accepted=0), permissionless `expire_refund` after deadline; partial refund semantics; tests | same + new accounts (`[b"settlement", invoice]`) |
-| M3 | Freelancer settlement dashboard (Vite+React + wallet-adapter), CSV export, docs | new `app/` workspace |
+| M1 | `fund_escrow` + `accept_milestone` + bankrun tests | Done |
+| M2 | `settle` + settlement PDA + Created→Funded→Accepted→Settled tests | Next |
+| M3 | Devnet deploy + minimal web (create / fund / accept / settle) + public demo | After M2 |
 
-Non-goals for MVP: multi-token support, recurring invoices, off-chain indexing.
+Non-goals for this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token.
 
 ## Development environment
 
@@ -36,22 +41,24 @@ Toolchain:
 - Anchor CLI 1.1.2 (`~/.local/bin/anchor`, prebuilt binary from coral-xyz releases)
 - anchor-lang / anchor-spl pinned to 1.1.2 in `programs/stable_invoice/Cargo.toml`
 
-Build:
+Build / test:
 
 ```bash
 cd ~/projects/StableInvoice
 anchor build          # requires cargo-build-sbf on PATH
 anchor keys sync      # keep declare_id! and Anchor.toml in sync with the keypair
-anchor test           # bankrun/litesvm-based once tests exist
+anchor test           # in-process bankrun, no local validator
 ```
 
 Devnet deploy needs `~/.config/solana/id.json` funded via `solana airdrop` or a faucet.
+That wallet is not created yet.
 
 ## Layout
 
 ```
-Anchor.toml                          # devnet config + program ids
+Anchor.toml                          # cluster config + program ids + test script
 Cargo.toml                           # workspace (overflow-checks = true required by Anchor)
 programs/stable_invoice/Cargo.toml   # program crate (anchor-lang 1.1.2, idl-build feature)
 programs/stable_invoice/src/lib.rs   # instructions, Invoice account, errors
+tests/stable-invoice.ts              # M1 bankrun suite (9 cases)
 ```
