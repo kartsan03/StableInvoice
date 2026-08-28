@@ -1,8 +1,9 @@
 //! StableInvoice — escrowed USDC invoicing for freelancers.
 //!
-//! M1 scope: initialize_invoice, fund_escrow, accept_milestone implemented
+//! M1: initialize_invoice, fund_escrow, accept_milestone
 //! (CPI transfer_checked, status transitions, events).
-//! settle() remains an M2 stub: release logic + settlement record land there.
+//! M2: settle drains the vault into the freelancer ATA (PDA-signed
+//! transfer_checked) and writes a settlement PDA. Not deployed.
 
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::{self, AssociatedToken};
@@ -48,8 +49,7 @@ pub mod stable_invoice {
     /// Client funds the whole invoice into the escrow vault.
     ///
     /// MVP limitation (documented): whoever funds becomes the invoice's client —
-    /// the payer is not fixed at creation time. Revisit in M2+ if front-running
-    /// matters for devnet UX.
+    /// the payer is not fixed at creation time.
     pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
         let invoice_acc = &ctx.accounts.invoice;
         let total = invoice_acc
@@ -102,7 +102,7 @@ pub mod stable_invoice {
     }
 
     /// Client accepts the next milestone. No token movement here —
-    /// settlement release happens in settle() (M2).
+    /// settlement release happens in settle().
     pub fn accept_milestone(ctx: Context<AcceptMilestone>) -> Result<()> {
         let invoice = &mut ctx.accounts.invoice;
         invoice.milestones_accepted = invoice
@@ -119,12 +119,89 @@ pub mod stable_invoice {
         Ok(())
     }
 
-    /// Releases payment for accepted milestones to the freelancer and writes the
-    /// settlement record (status = Settled) on-chain.
-    // TODO(M2): token::transfer_checked vault -> freelancer_usdc (PDA-signed CPI),
-    // require status == Funded && milestones_accepted > 0, status = Settled.
-    pub fn settle(_ctx: Context<Settle>) -> Result<()> {
-        err!(StableInvoiceError::NotImplemented)
+    /// Drain the vault (`amount_usdc × milestone_count`) to the freelancer ATA
+    /// and persist a settlement PDA. Signer must be the invoice client or freelancer.
+    ///
+    /// If the freelancer ATA is missing it is created idempotently (same pattern
+    /// as the vault in fund_escrow); the settler pays the ATA rent.
+    pub fn settle(ctx: Context<Settle>) -> Result<()> {
+        let invoice_key = ctx.accounts.invoice.key();
+        let freelancer_key = ctx.accounts.invoice.freelancer;
+        let client_key = ctx.accounts.invoice.client;
+        let milestone_count = ctx.accounts.invoice.milestone_count;
+        let bump = ctx.accounts.invoice.bump;
+        let index = ctx.accounts.invoice.index.to_le_bytes();
+        let bump_seed = [bump];
+
+        let total = ctx
+            .accounts
+            .invoice
+            .amount_usdc
+            .checked_mul(milestone_count as u64)
+            .ok_or(StableInvoiceError::Overflow)?;
+        require!(
+            token_account_amount(&ctx.accounts.vault.to_account_info())? == total,
+            StableInvoiceError::InvalidVault
+        );
+
+        if ctx.accounts.freelancer_usdc.data_is_empty() {
+            associated_token::create_idempotent(CpiContext::new(
+                ctx.accounts.associated_token_program.key(),
+                associated_token::Create {
+                    payer: ctx.accounts.authority.to_account_info(),
+                    associated_token: ctx.accounts.freelancer_usdc.to_account_info(),
+                    authority: ctx.accounts.freelancer.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                    token_program: ctx.accounts.token_program.to_account_info(),
+                },
+            ))?;
+        }
+
+        let signer_seeds: &[&[u8]] = &[
+            b"invoice",
+            freelancer_key.as_ref(),
+            &index,
+            &bump_seed,
+        ];
+        token::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.freelancer_usdc.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    authority: ctx.accounts.invoice.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            total,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+
+        let timestamp = Clock::get()?.unix_timestamp;
+        let settlement_key = ctx.accounts.settlement.key();
+        let settlement_bump = ctx.bumps.settlement;
+
+        let settlement = &mut ctx.accounts.settlement;
+        settlement.invoice = invoice_key;
+        settlement.amount = total;
+        settlement.timestamp = timestamp;
+        settlement.milestone_count = milestone_count;
+        settlement.bump = settlement_bump;
+
+        ctx.accounts.invoice.status = InvoiceStatus::Settled;
+
+        emit!(InvoiceSettled {
+            invoice: invoice_key,
+            settlement: settlement_key,
+            freelancer: freelancer_key,
+            client: client_key,
+            amount: total,
+            milestone_count,
+            timestamp,
+        });
+        Ok(())
     }
 }
 
@@ -140,6 +217,26 @@ pub struct Invoice {
     pub milestone_count: u8,
     pub milestones_accepted: u8,
     pub status: InvoiceStatus,
+    pub bump: u8,
+}
+
+fn token_account_amount(account: &AccountInfo) -> Result<u64> {
+    require!(account.data_len() >= 72, StableInvoiceError::InvalidVault);
+    let data = account.try_borrow_data()?;
+    let amt_bytes: [u8; 8] = data[64..72]
+        .try_into()
+        .map_err(|_| error!(StableInvoiceError::InvalidVault))?;
+    Ok(u64::from_le_bytes(amt_bytes))
+}
+
+/// Permanent on-chain settlement record. Seeds: `[b"settlement", invoice.key()]`.
+#[account]
+#[derive(InitSpace)]
+pub struct Settlement {
+    pub invoice: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+    pub milestone_count: u8,
     pub bump: u8,
 }
 
@@ -174,6 +271,17 @@ pub struct MilestoneAccepted {
     pub client: Pubkey,
     pub milestones_accepted: u8,
     pub milestone_count: u8,
+}
+
+#[event]
+pub struct InvoiceSettled {
+    pub invoice: Pubkey,
+    pub settlement: Pubkey,
+    pub freelancer: Pubkey,
+    pub client: Pubkey,
+    pub amount: u64,
+    pub milestone_count: u8,
+    pub timestamp: i64,
 }
 
 // ---------- Contexts ----------
@@ -215,7 +323,7 @@ pub struct FundEscrow<'info> {
             == associated_token::get_associated_token_address(&invoice.key(), &usdc_mint.key())
             @ StableInvoiceError::InvalidVault,
     )]
-    pub vault:UncheckedAccount<'info>,
+    pub vault: UncheckedAccount<'info>,
     pub usdc_mint: Account<'info, Mint>,
     #[account(
         mut,
@@ -247,31 +355,59 @@ pub struct AcceptMilestone<'info> {
 
 #[derive(Accounts)]
 pub struct Settle<'info> {
+    /// Invoice client or freelancer. Pays rent for the settlement PDA
+    /// (and the freelancer ATA if it has to be created).
     #[account(mut)]
-    pub freelancer: Signer<'info>,
+    pub authority: Signer<'info>,
     #[account(
         mut,
         seeds = [b"invoice", invoice.freelancer.as_ref(), &invoice.index.to_le_bytes()],
         bump = invoice.bump,
-        constraint = invoice.freelancer == freelancer.key()
-            @ StableInvoiceError::Unauthorized,
         constraint = invoice.status == InvoiceStatus::Funded
             @ StableInvoiceError::NotFunded,
+        constraint = authority.key() == invoice.freelancer || authority.key() == invoice.client
+            @ StableInvoiceError::Unauthorized,
+        constraint = invoice.milestones_accepted == invoice.milestone_count
+            @ StableInvoiceError::MilestonesIncomplete,
     )]
     pub invoice: Account<'info, Invoice>,
-    #[account(mut, associated_token::mint = usdc_mint, associated_token::authority = invoice)]
-    pub vault: Account<'info, TokenAccount>,
+    /// CHECK: destination ATA owner; must be the invoice freelancer.
+    #[account(address = invoice.freelancer)]
+    pub freelancer: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + Settlement::INIT_SPACE,
+        seeds = [b"settlement", invoice.key().as_ref()],
+        bump,
+    )]
+    pub settlement: Account<'info, Settlement>,
+    #[account(address = invoice.usdc_mint @ StableInvoiceError::InvalidVault)]
     pub usdc_mint: Account<'info, Mint>,
-    #[account(mut, associated_token::mint = usdc_mint, associated_token::authority = freelancer)]
-    pub freelancer_usdc: Account<'info, TokenAccount>,
+    /// Escrow vault: invoice-owned USDC ATA (off-curve owner).
+    /// CHECK: address validated against the invoice PDA's ATA derivation.
+    #[account(
+        mut,
+        constraint = vault.key()
+            == associated_token::get_associated_token_address(&invoice.key(), &usdc_mint.key())
+            @ StableInvoiceError::InvalidVault,
+    )]
+    pub vault: UncheckedAccount<'info>,
+    /// CHECK: must be the freelancer's ATA for this mint (created idempotently if empty).
+    #[account(
+        mut,
+        constraint = freelancer_usdc.key()
+            == associated_token::get_associated_token_address(&invoice.freelancer, &usdc_mint.key())
+            @ StableInvoiceError::InvalidFreelancerAta,
+    )]
+    pub freelancer_usdc: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
 #[error_code]
 pub enum StableInvoiceError {
-    #[msg("Instruction not implemented yet — lands in M2")]
-    NotImplemented,
     #[msg("Invoice is not in Funded state")]
     NotFunded,
     #[msg("Only the invoice's client/freelancer can call this")]
@@ -286,4 +422,8 @@ pub enum StableInvoiceError {
     InvalidVault,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("Cannot settle until every milestone is accepted")]
+    MilestonesIncomplete,
+    #[msg("Freelancer USDC account must be the freelancer's ATA for this mint")]
+    InvalidFreelancerAta,
 }
