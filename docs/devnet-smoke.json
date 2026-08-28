@@ -1,0 +1,31 @@
+{
+  "cluster": "devnet",
+  "programId": "36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU",
+  "mint": "84rKt5u5YR33eeyGbYTYErckG9aj1yNpK1aVzqhR2WRq",
+  "mintAuthority": "CmYSWALfhFSw4CKPpJpbH19Q7NQn2N72DNnU34PDP85Q",
+  "invoice": "GheRnGpz6kRK1yrUePv8JLRK2PzWrhcfBqhSziBX5feE",
+  "settlement": "BaWS7Hz2e7F5ZAsw6dtFVCiLbHwnV5DHfQ24xMq4MTws",
+  "freelancer": "VnpJHTDQ1P3T5QoxWsyZnpsVzEg1aAVHppJaHUVDaKE",
+  "client": "GGpM8hQG6oURSJVHaw2JYHUA3hDyW4c9uaFP54EkHmEp",
+  "index": 938847309,
+  "amountUsdc": "1000000",
+  "milestoneCount": 2,
+  "status": {
+    "settled": {}
+  },
+  "settlementAmount": "2000000",
+  "signatures": {
+    "init": "5V1wppgoxwtV9LVMPYAEeMqsi1X6HL7d59QhDoBrkxf9EKUAfZk5kza4AMJN9QpRjqtGn5WBcJADrcXXwpVriKDP",
+    "fund": "4xW9hwNGW3zY2EkCsXjims5zWfEXSYMku65j55XizyBxoHDJ7dxo582sNXUnh1UiZCjoowmNVN5gBzWFzndvbKf6",
+    "accept": [
+      "3W3rhPf2Yk6b2NmgUFxTjcui9oi4rSjwLATVXBiEQPMcFGQ4MsBUKtRfJRsvcddPvNvFKUggH4oDiNgPhuepmKaP",
+      "3rZ7i5vXJF87wQ8q5HcP8Nz64UX6y5cq2bgby7sFpNyciYHUYxZiMKRyxDSMSwRasNqa2HGj4VEB3xXXGfhCRg1V"
+    ],
+    "settle": "7nAnUUVj9NTm4qME8mpT1NHz2W1jn8F6wNpNi772Gy51BY9spCQaAVrDqde44kERMHzV1y9VaJ5MEfxVkmpWkw2"
+  },
+  "explorer": {
+    "settle": "https://explorer.solana.com/tx/7nAnUUVj9NTm4qME8mpT1NHz2W1jn8F6wNpNi772Gy51BY9spCQaAVrDqde44kERMHzV1y9VaJ5MEfxVkmpWkw2?cluster=devnet",
+    "program": "https://explorer.solana.com/address/36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU?cluster=devnet",
+    "mint": "https://explorer.solana.com/address/84rKt5u5YR33eeyGbYTYErckG9aj1yNpK1aVzqhR2WRq?cluster=devnet"
+  }
+}
