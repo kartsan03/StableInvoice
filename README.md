@@ -6,7 +6,7 @@ settlement leaves an on-chain record.
 
 **Status:** M1–M3 shipped on **devnet** (`v0.3.0-demo`). Bankrun **19/19**.
 
-Demo: https://temporary-sonic-hazel-08suny1.vercel.app  
+Demo: https://stableinvoice.vercel.app  
 (devnet only. Phantom or Solflare. Two wallets: freelancer creates, client funds and accepts.)
 
 Program id: `36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU`  
@@ -34,7 +34,7 @@ Whoever funds becomes the invoice's client (not fixed at create time).
 | M2 | `settle` + settlement PDA + Draft→Funded→Accepted→Settled tests | Done |
 | M3 | Devnet deploy + web (create / fund / accept / settle) + public demo | Done |
 
-Not in this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token, the 25-invoice KPI batch.
+Not in this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token.
 `cancel_refund` / `expire_refund` are not implemented.
 
 ## Demo tokens
