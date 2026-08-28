@@ -30,7 +30,7 @@ MVP note: whoever funds becomes the invoice's client (not fixed at create time).
 |---|---|---|
 | M1 | `fund_escrow` + `accept_milestone` + bankrun tests | Done |
 | M2 | `settle` + settlement PDA + Draft→Funded→Accepted→Settled tests | Done |
-| M3 | Devnet deploy + minimal web (create / fund / accept / settle) + public demo | Deploy done; web next |
+| M3 | Devnet deploy + minimal web (create / fund / accept / settle) + public demo | Deploy done; web in repo, public URL next |
 
 Non-goals for this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token.
 `cancel_refund` / `expire_refund` are not implemented.
@@ -68,4 +68,19 @@ Cargo.toml                           # workspace (overflow-checks = true require
 programs/stable_invoice/Cargo.toml   # program crate (anchor-lang 1.1.2, idl-build feature)
 programs/stable_invoice/src/lib.rs   # instructions, Invoice + Settlement accounts, errors
 tests/stable-invoice.ts              # M1+M2 bankrun suite (19 cases)
+scripts/devnet-smoke.ts              # live create/fund/accept/settle on devnet
+web/                                 # Vite + React demo (Phantom / Solflare)
 ```
+
+## Web (local)
+
+```bash
+cd web
+cp .env.example .env.local   # public RPC + program id + mint; no secrets
+npm install
+npm run dev
+```
+
+Set `VITE_RPC_URL`, `VITE_PROGRAM_ID`, `VITE_MINT`. Production builds reject localhost RPC.
+Mint authority is a server env (`FAUCET_SECRET_KEY`) for `/api/faucet`, not a `VITE_` var.
+See `web/README.md`.
