@@ -21,7 +21,7 @@ import {
 } from "@solana/web3.js";
 import { expect } from "chai";
 
-describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
+describe("stable_invoice — M1 + M2 (fund, accept, settle)", () => {
   let provider: BankrunProvider;
   let program: Program<StableInvoice>;
   let banksClient: any;
@@ -40,6 +40,7 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
   };
 
   const freelancer = Keypair.generate();
+  const freelancerB = Keypair.generate();
   const client = Keypair.generate();
   const intruder = Keypair.generate();
 
@@ -95,7 +96,7 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
     );
 
     // fund wallets via plain transfers (bankrun has no airdrop)
-    for (const kp of [freelancer, client, intruder]) {
+    for (const kp of [freelancer, freelancerB, client, intruder]) {
       await sendTx([anchor.web3.SystemProgram.transfer({
         fromPubkey: payer.publicKey,
         toPubkey: kp.publicKey,
@@ -109,25 +110,51 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
       [Buffer.from("invoice"), owner.toBytes(), new BN(index).toArrayLike(Buffer, "le", 8)],
       program.programId,
     )[0];
+  const settlementPda = (invoice: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("settlement"), invoice.toBytes()],
+      program.programId,
+    )[0];
   const vaultFor = (invoice: PublicKey) =>
     getAssociatedTokenAddressSync(mint, invoice, true);
+  const ataFor = (owner: PublicKey) =>
+    getAssociatedTokenAddressSync(mint, owner);
 
-  const initInvoice = (index: number, amount = AMOUNT, count = MILESTONES) => {
+  const accountInfo = async (pk: PublicKey) => {
+    try {
+      return await provider.connection.getAccountInfo(pk);
+    } catch {
+      return null;
+    }
+  };
+  const tokenAmount = async (pk: PublicKey) => {
+    const acc = await accountInfo(pk);
+    if (!acc) return 0;
+    return Number(acc.data.readBigUInt64LE(64));
+  };
+
+  const initInvoice = (
+    index: number,
+    amount = AMOUNT,
+    count = MILESTONES,
+    owner: Keypair = freelancer,
+  ) => {
     nextSlot();
     return program.methods
       .initializeInvoice(amount, count, new BN(index))
       .accounts({
-        freelancer: freelancer.publicKey,
-        invoice: invoicePda(freelancer.publicKey, index),
+        freelancer: owner.publicKey,
+        invoice: invoicePda(owner.publicKey, index),
         usdcMint: mint,
       })
-      .signers([freelancer])
+      .preInstructions([uniqueCu()])
+      .signers([owner])
       .rpc();
   };
 
-  const fundEscrow = (index: number, signer: Keypair = client) => {
+  const fundEscrow = (index: number, signer: Keypair = client, owner: PublicKey = freelancer.publicKey) => {
     nextSlot();
-    const invoice = invoicePda(freelancer.publicKey, index);
+    const invoice = invoicePda(owner, index);
     return program.methods
       .fundEscrow()
       .accounts({
@@ -137,35 +164,91 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
         usdcMint: mint,
         clientUsdc: getAssociatedTokenAddressSync(mint, signer.publicKey),
       })
+      .preInstructions([uniqueCu()])
       .signers([signer])
       .rpc();
   };
 
-  const acceptMilestone = (index: number, signer: Keypair = client) => {
+  const acceptMilestone = (
+    index: number,
+    signer: Keypair = client,
+    owner: PublicKey = freelancer.publicKey,
+  ) => {
     nextSlot();
     return program.methods
       .acceptMilestone()
       .accounts({
-        invoice: invoicePda(freelancer.publicKey, index),
+        invoice: invoicePda(owner, index),
         client: signer.publicKey,
       })
+      .preInstructions([uniqueCu()])
       .signers([signer])
       .rpc();
   };
 
-  const expectFail = async (p: Promise<any>, msg: string) => {
+  const acceptAll = async (
+    index: number,
+    count = MILESTONES,
+    owner: PublicKey = freelancer.publicKey,
+  ) => {
+    for (let i = 0; i < count; i++) {
+      await acceptMilestone(index, client, owner);
+    }
+  };
+
+  const settleAccounts = (
+    index: number,
+    authority: Keypair,
+    owner: PublicKey = freelancer.publicKey,
+  ) => {
+    const invoice = invoicePda(owner, index);
+    return {
+      authority: authority.publicKey,
+      invoice,
+      freelancer: owner,
+      settlement: settlementPda(invoice),
+      usdcMint: mint,
+      vault: vaultFor(invoice),
+      freelancerUsdc: ataFor(owner),
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    };
+  };
+
+  const settle = (
+    index: number,
+    authority: Keypair,
+    owner: PublicKey = freelancer.publicKey,
+  ) => {
+    nextSlot();
+    return program.methods
+      .settle()
+      .accounts(settleAccounts(index, authority, owner))
+      .preInstructions([uniqueCu()])
+      .signers([authority])
+      .rpc();
+  };
+
+  const expectFail = async (p: Promise<any>, msg: string | string[]) => {
     try {
       await p;
       expect.fail(`expected failure: ${msg}`);
     } catch (e: any) {
-      expect(String(e)).to.include(msg);
+      const s = String(e);
+      const needles = Array.isArray(msg) ? msg : [msg];
+      const hit = needles.some((n) => s.includes(n));
+      expect(hit, `expected [${needles.join(" | ")}] in:\n${s}`).to.equal(true);
     }
   };
 
   // bankrun's blockhash is static — identical txs would collide on signature.
   // A unique compute-budget ix per call keeps every transaction distinct.
   let slot = 0;
+  let cuNonce = 0;
   const nextSlot = () => testCtx.warpToSlot(BigInt(++slot));
+  const uniqueCu = () =>
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 + (++cuNonce) });
 
   it("initialize_invoice: happy path — account fields match", async () => {
     await initInvoice(0);
@@ -189,9 +272,7 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
     const inv = await program.account.invoice.fetch(invoice);
     expect(inv.status).to.deep.equal({ funded: {} });
     expect(inv.client.equals(client.publicKey)).to.be.true;
-    const vault = await provider.connection.getAccountInfo(vaultFor(invoice));
-    const vaultBalance = Number(vault.data.readBigUInt64LE(64));
-    expect(vaultBalance).to.equal(AMOUNT.toNumber() * MILESTONES);
+    expect(await tokenAmount(vaultFor(invoice))).to.equal(AMOUNT.toNumber() * MILESTONES);
   });
 
   it("fund_escrow: double-fund rejected", async () => {
@@ -221,33 +302,163 @@ describe("stable_invoice — M1 (fund_escrow + accept_milestone)", () => {
     expect(inv.milestonesAccepted).to.equal(MILESTONES);
   });
 
-  it("settle: still an M2 stub (NotImplemented)", async () => {
+  it("settle: freelancer signer — vault drained, ATA credited for amount×milestones, settlement PDA written", async () => {
     const invoice = invoicePda(freelancer.publicKey, 0);
-    // freelancer ATA must exist for settle's account constraints to pass
+    const total = AMOUNT.toNumber() * MILESTONES;
+    const freelancerAta = ataFor(freelancer.publicKey);
+
+    // ATA exists before this call (explicit create — documents the non-empty path).
     await sendTx(
       [createAssociatedTokenAccountIdempotentInstruction(
         payer.publicKey,
-        getAssociatedTokenAddressSync(mint, freelancer.publicKey),
+        freelancerAta,
         freelancer.publicKey,
         mint,
       )],
       [],
     );
+    const before = await tokenAmount(freelancerAta);
+
+    await settle(0, freelancer);
+
+    const inv = await program.account.invoice.fetch(invoice);
+    expect(inv.status).to.deep.equal({ settled: {} });
+    expect(await tokenAmount(vaultFor(invoice))).to.equal(0);
+    expect(await tokenAmount(freelancerAta)).to.equal(before + total);
+
+    const rec = await program.account.settlement.fetch(settlementPda(invoice));
+    expect(rec.invoice.equals(invoice)).to.be.true;
+    expect(rec.amount.toNumber()).to.equal(total);
+    expect(rec.milestoneCount).to.equal(MILESTONES);
+    expect(Number(rec.timestamp)).to.be.a("number");
+  });
+
+  it("settle: double-settle rejected", async () => {
+    const invoice = invoicePda(freelancer.publicKey, 0);
     await expectFail(
-      program.methods
-        .settle()
-        .accounts({
-          freelancer: freelancer.publicKey,
-          invoice,
-          vault: vaultFor(invoice),
-          usdcMint: mint,
-          freelancerUsdc: getAssociatedTokenAddressSync(mint, freelancer.publicKey),
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: anchor.web3.SystemProgram.programId,
-        })
-        .signers([freelancer])
-        .rpc(),
-      "NotImplemented",
+      settle(0, freelancer),
+      ["NotFunded", "already in use", "AlreadyInUse", "AccountAlreadyInitialized"],
+    );
+    const inv = await program.account.invoice.fetch(invoice);
+    expect(inv.status).to.deep.equal({ settled: {} });
+    expect(await tokenAmount(vaultFor(invoice))).to.equal(0);
+  });
+
+  it("settle: while Draft / before fund rejected", async () => {
+    await initInvoice(4);
+    await expectFail(settle(4, freelancer), "NotFunded");
+  });
+
+  it("settle: before all milestones rejected (2/3 accepted)", async () => {
+    await initInvoice(3);
+    await fundEscrow(3);
+    await acceptMilestone(3);
+    await acceptMilestone(3);
+    const inv = await program.account.invoice.fetch(invoicePda(freelancer.publicKey, 3));
+    expect(inv.milestonesAccepted).to.equal(2);
+    await expectFail(settle(3, freelancer), "MilestonesIncomplete");
+    expect(await tokenAmount(vaultFor(invoicePda(freelancer.publicKey, 3)))).to.equal(
+      AMOUNT.toNumber() * MILESTONES,
+    );
+  });
+
+  it("settle: wrong signer rejected", async () => {
+    await initInvoice(6);
+    await fundEscrow(6);
+    await acceptAll(6);
+    await expectFail(settle(6, intruder), "Unauthorized");
+    const inv = await program.account.invoice.fetch(invoicePda(freelancer.publicKey, 6));
+    expect(inv.status).to.deep.equal({ funded: {} });
+  });
+
+  it("settle: client signer happy path — vault 0, freelancer ATA += total", async () => {
+    const index = 2;
+    const total = AMOUNT.toNumber() * MILESTONES;
+    const invoice = invoicePda(freelancer.publicKey, index);
+    const before = await tokenAmount(ataFor(freelancer.publicKey));
+
+    await initInvoice(index);
+    await fundEscrow(index);
+    await acceptAll(index);
+    await settle(index, client);
+
+    const inv = await program.account.invoice.fetch(invoice);
+    expect(inv.status).to.deep.equal({ settled: {} });
+    expect(await tokenAmount(vaultFor(invoice))).to.equal(0);
+    expect(await tokenAmount(ataFor(freelancer.publicKey))).to.equal(before + total);
+
+    const rec = await program.account.settlement.fetch(settlementPda(invoice));
+    expect(rec.invoice.equals(invoice)).to.be.true;
+    expect(rec.amount.toNumber()).to.equal(total);
+    expect(rec.milestoneCount).to.equal(MILESTONES);
+  });
+
+  it("after Settled: accept_milestone and fund_escrow still rejected", async () => {
+    await expectFail(acceptMilestone(0), "NotFunded");
+    await expectFail(fundEscrow(0), "AlreadyFunded");
+  });
+
+  it("settle: missing freelancer ATA is created idempotently", async () => {
+    const owner = freelancerB;
+    const index = 0;
+    const total = AMOUNT.toNumber() * MILESTONES;
+    const invoice = invoicePda(owner.publicKey, index);
+    const ata = ataFor(owner.publicKey);
+
+    expect(await accountInfo(ata)).to.equal(null);
+
+    await initInvoice(index, AMOUNT, MILESTONES, owner);
+    await fundEscrow(index, client, owner.publicKey);
+    await acceptAll(index, MILESTONES, owner.publicKey);
+    await settle(index, owner, owner.publicKey);
+
+    expect(await tokenAmount(vaultFor(invoice))).to.equal(0);
+    expect(await tokenAmount(ata)).to.equal(total);
+    const rec = await program.account.settlement.fetch(settlementPda(invoice));
+    expect(rec.invoice.equals(invoice)).to.be.true;
+    expect(rec.amount.toNumber()).to.equal(total);
+  });
+
+  it("settle: wrong vault ATA rejected", async () => {
+    const index = 7;
+    await initInvoice(index);
+    await fundEscrow(index);
+    await acceptAll(index);
+    nextSlot();
+    const accounts = settleAccounts(index, freelancer);
+    accounts.vault = clientAta;
+    await expectFail(
+      program.methods.settle().accounts(accounts).preInstructions([uniqueCu()]).signers([freelancer]).rpc(),
+      "InvalidVault",
+    );
+  });
+
+  it("settle: settlement PDA for a different invoice rejected", async () => {
+    const index = 8;
+    await initInvoice(index);
+    await fundEscrow(index);
+    await acceptAll(index);
+    nextSlot();
+    const accounts = settleAccounts(index, freelancer);
+    // PDA seeded with invoice 0, not invoice 8
+    accounts.settlement = settlementPda(invoicePda(freelancer.publicKey, 0));
+    await expectFail(
+      program.methods.settle().accounts(accounts).preInstructions([uniqueCu()]).signers([freelancer]).rpc(),
+      "ConstraintSeeds",
+    );
+  });
+
+  it("settle: wrong freelancer ATA rejected", async () => {
+    const index = 10;
+    await initInvoice(index);
+    await fundEscrow(index);
+    await acceptAll(index);
+    nextSlot();
+    const accounts = settleAccounts(index, freelancer);
+    accounts.freelancerUsdc = clientAta;
+    await expectFail(
+      program.methods.settle().accounts(accounts).preInstructions([uniqueCu()]).signers([freelancer]).rpc(),
+      "InvalidFreelancerAta",
     );
   });
 });
