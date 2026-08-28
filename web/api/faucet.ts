@@ -68,7 +68,8 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 
 function isOnCurve(bytes: Uint8Array): boolean {
   try {
-    ed25519.ExtendedPoint.fromHex(bytes);
+    const Point = (ed25519 as unknown as { ExtendedPoint: { fromHex: (b: Uint8Array) => unknown } }).ExtendedPoint;
+    Point.fromHex(bytes);
     return true;
   } catch {
     return false;
