@@ -4,11 +4,16 @@ Escrowed USDC invoicing for freelancers on Solana. A client funds a program-cont
 escrow (PDA) upfront; the freelancer gets paid as milestones are accepted, and every
 settlement leaves an on-chain record.
 
-**Status:** M1 + M2 are implemented (`v0.2.0-m2`). `initialize_invoice`, `fund_escrow`,
-`accept_milestone`, and `settle` run with CPI `transfer_checked` and status guards.
-Bankrun suite: **19/19 passing**. Not deployed to devnet yet.
+**Status:** M1 + M2 implemented. Program deployed to **devnet**. Bankrun **19/19**.
+Web demo is next.
 
-Program id (localnet / planned devnet): `36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU`
+Program id (devnet): `36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU`
+
+Explorer: https://explorer.solana.com/address/36yRHdUHk63ZWUDpKiadoWm5UKxdD4j43KhKyHKFm9mU?cluster=devnet
+
+Demo mint (6 decimals, not Circle USDC): `84rKt5u5YR33eeyGbYTYErckG9aj1yNpK1aVzqhR2WRq`
+
+Settle tx: https://explorer.solana.com/tx/7nAnUUVj9NTm4qME8mpT1NHz2W1jn8F6wNpNi772Gy51BY9spCQaAVrDqde44kERMHzV1y9VaJ5MEfxVkmpWkw2?cluster=devnet
 
 ## Instructions
 
@@ -25,7 +30,7 @@ MVP note: whoever funds becomes the invoice's client (not fixed at create time).
 |---|---|---|
 | M1 | `fund_escrow` + `accept_milestone` + bankrun tests | Done |
 | M2 | `settle` + settlement PDA + Draft→Funded→Accepted→Settled tests | Done |
-| M3 | Devnet deploy + minimal web (create / fund / accept / settle) + public demo | Next |
+| M3 | Devnet deploy + minimal web (create / fund / accept / settle) + public demo | Deploy done; web next |
 
 Non-goals for this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token.
 `cancel_refund` / `expire_refund` are not implemented.

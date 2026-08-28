@@ -3,3 +3,8 @@ target/
 .DS_Store
 node_modules/
 *.jsonl
+.env
+.env.*
+!.env.example
+web/dist
+id.json
