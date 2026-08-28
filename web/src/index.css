@@ -1,0 +1,190 @@
+:root {
+  --ink: #161412;
+  --paper: #f4efe6;
+  --rule: #cfc6b6;
+  --muted: #6b655a;
+  --accent: #8a1f12;
+  --ok: #1f4d3a;
+  --warn: #8a5a10;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+a {
+  color: var(--accent);
+}
+
+code,
+.mono,
+button,
+input,
+select {
+  font-family: var(--mono);
+}
+
+header.mast {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+header.mast h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+}
+
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 4rem;
+}
+
+.lede {
+  font-size: 1.05rem;
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+
+form,
+.panel {
+  border-top: 1px solid var(--rule);
+  padding: 1.1rem 0 0.4rem;
+}
+
+label {
+  display: block;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.7rem 0 0.25rem;
+}
+
+input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  padding: 0.35rem 0;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+input:focus {
+  outline: none;
+  border-bottom-width: 2px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+button {
+  background: var(--ink);
+  color: var(--paper);
+  border: 0;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.invoice {
+  border-top: 1px solid var(--rule);
+  padding: 1rem 0;
+}
+
+.invoice h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+}
+
+.meta {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.status {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.err {
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.wallet-adapter-button {
+  background: var(--ink) !important;
+  color: var(--paper) !important;
+  font-family: var(--mono) !important;
+  border-radius: 0 !important;
+  height: auto !important;
+  padding: 0.4rem 0.8rem !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  font-family: var(--serif);
+}
