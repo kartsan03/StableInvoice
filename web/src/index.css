@@ -5,7 +5,6 @@
   --muted: #6b655a;
   --accent: #8a1f12;
   --ok: #1f4d3a;
-  --warn: #8a5a10;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
   --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
 }
@@ -38,18 +37,33 @@ select {
 
 header.mast {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.25rem 1.5rem 0.75rem;
+  padding: 0.9rem 1.5rem;
   border-bottom: 1px solid var(--rule);
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+  z-index: 4;
 }
 
-header.mast h1 {
-  font-size: 1.35rem;
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font-family: var(--serif);
+}
+
+.brand span.name {
+  font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0;
 }
 
 .badge {
@@ -57,28 +71,80 @@ header.mast h1 {
   border: 1px solid var(--accent);
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0.15rem 0.45rem;
+  padding: 0.18rem 0.42rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .wrap {
-  max-width: 46rem;
+  max-width: 52rem;
   margin: 0 auto;
-  padding: 1.5rem 1.5rem 4rem;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 4vw, 2.7rem);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.85rem;
+  max-width: 18ch;
 }
 
 .lede {
-  font-size: 1.05rem;
+  font-size: 1.08rem;
   color: var(--muted);
-  margin: 0 0 1.5rem;
+  margin: 0 0 1.6rem;
+  max-width: 38rem;
 }
 
-form,
-.panel {
-  border-top: 1px solid var(--rule);
-  padding: 1.1rem 0 0.4rem;
+.flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin: 1.6rem 0 1.8rem;
+  border: 1px solid var(--rule);
+  padding: 0.9rem 0.75rem;
+}
+
+.flow article {
+  min-width: 0;
+}
+
+.flow h2 {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+}
+
+.flow p {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.arrow {
+  align-self: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 1.1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
 }
 
 label {
@@ -95,9 +161,10 @@ input {
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--ink);
-  padding: 0.35rem 0;
+  padding: 0.45rem 0;
   font-size: 1rem;
   color: var(--ink);
+  min-height: 2.5rem;
 }
 
 input:focus {
@@ -105,18 +172,12 @@ input:focus {
   border-bottom-width: 2px;
 }
 
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.9rem;
-}
-
 button {
   background: var(--ink);
   color: var(--paper);
   border: 0;
-  padding: 0.45rem 0.85rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.9rem;
   font-size: 0.82rem;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -138,6 +199,12 @@ input:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+form,
+.panel {
+  border-top: 1px solid var(--rule);
+  padding: 1.1rem 0 0.4rem;
 }
 
 .invoice {
@@ -176,15 +243,47 @@ a:focus-visible {
   color: var(--ok);
 }
 
+.note {
+  margin: 1.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+footer.quiet {
+  border-top: 1px solid var(--rule);
+  margin-top: 3rem;
+  padding-top: 0.9rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
 .wallet-adapter-button {
   background: var(--ink) !important;
   color: var(--paper) !important;
   font-family: var(--mono) !important;
   border-radius: 0 !important;
   height: auto !important;
+  min-height: 2.5rem !important;
   padding: 0.4rem 0.8rem !important;
 }
 
 .wallet-adapter-modal-wrapper {
   font-family: var(--serif);
+}
+
+@media (max-width: 720px) {
+  .flow {
+    grid-template-columns: 1fr;
+  }
+  .arrow {
+    transform: rotate(90deg);
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
