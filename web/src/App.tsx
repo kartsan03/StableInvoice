@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
@@ -18,6 +18,7 @@ import { useProgram } from "./lib/useProgram";
 
 type StatusKey = "draft" | "funded" | "settled";
 type Screen = "landing" | "app";
+type FilterMode = "mine" | "all";
 
 type InvoiceRow = {
   publicKey: PublicKey;
@@ -29,6 +30,23 @@ type InvoiceRow = {
   milestonesAccepted: number;
   status: StatusKey;
 };
+
+type SettlementReceipt =
+  | {
+      status: "ready";
+      invoice: string;
+      settlement: string;
+      amount: bigint;
+      milestoneCount: number;
+      timestamp: number;
+      tx: string;
+    }
+  | {
+      status: "pending";
+      invoice: string;
+      settlement: string;
+      tx: string;
+    };
 
 function statusOf(s: unknown): StatusKey {
   if (s && typeof s === "object") {
@@ -55,6 +73,15 @@ function nextIndex(existing: InvoiceRow[], freelancer: PublicKey): number {
   const mine = existing.filter((r) => r.freelancer.equals(freelancer));
   if (mine.length === 0) return 1;
   return Math.max(...mine.map((r) => r.index.toNumber())) + 1;
+}
+
+function readInvoiceParam(): string | null {
+  try {
+    const v = new URLSearchParams(window.location.search).get("invoice");
+    return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -102,11 +129,11 @@ function Landing({ onApp }: { onApp: () => void }) {
   return (
     <main className="wrap">
       <section className="hero">
-        <h1>The client locks the money. You get paid when the work is accepted.</h1>
+        <h1>The client locks the money. Settle pays once every milestone is accepted.</h1>
         <p className="lede">
-          StableInvoice holds USDC in a Solana program until the client signs off on
-          each milestone. Settlement writes a permanent on-chain record. This demo
-          runs on Devnet.
+          StableInvoice holds USDC in a Solana program. Accepting a milestone moves no
+          tokens — settle drains the vault in one lump sum and writes a permanent
+          on-chain record. This demo runs on Devnet.
         </p>
         <div className="row">
           <button type="button" onClick={onApp}>
@@ -155,6 +182,10 @@ function Desk() {
   const [amount, setAmount] = useState("1.00");
   const [milestones, setMilestones] = useState("2");
   const [balance, setBalance] = useState<bigint | null>(null);
+  const [filter, setFilter] = useState<FilterMode>("mine");
+  const [focusInvoice] = useState<string | null>(() => readInvoiceParam());
+  const [receipt, setReceipt] = useState<SettlementReceipt | null>(null);
+  const focusRef = useRef<HTMLElement | null>(null);
 
   const run = async (label: string, fn: () => Promise<string | void>) => {
     setBusy(label);
@@ -207,6 +238,21 @@ function Desk() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!focusInvoice || !focusRef.current) return;
+    focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusInvoice, rows]);
+
+  const visibleRows = useMemo(() => {
+    if (filter === "all") return rows;
+    if (!publicKey) return [];
+    return rows.filter(
+      (r) =>
+        r.freelancer.equals(publicKey) ||
+        (!r.client.equals(PublicKey.default) && r.client.equals(publicKey)),
+    );
+  }, [filter, publicKey, rows]);
 
   const faucet = () =>
     run("faucet", async () => {
@@ -266,6 +312,9 @@ function Desk() {
   const accept = (row: InvoiceRow) =>
     run("accept", async () => {
       if (!program || !publicKey) throw new Error("Connect as the client");
+      if (!publicKey.equals(row.client)) {
+        throw new Error("Switch wallet to the invoice client to accept");
+      }
       const sig = await program.methods
         .acceptMilestone()
         .accounts({
@@ -280,15 +329,21 @@ function Desk() {
   const settle = (row: InvoiceRow) =>
     run("settle", async () => {
       if (!program || !publicKey) throw new Error("Connect as client or freelancer");
+      const isParty =
+        publicKey.equals(row.freelancer) || publicKey.equals(row.client);
+      if (!isParty) {
+        throw new Error("Switch wallet to the invoice client or freelancer to settle");
+      }
       const vault = vaultAta(row.publicKey, MINT);
       const freelancerUsdc = getAssociatedTokenAddressSync(MINT, row.freelancer);
+      const settlement = settlementPda(row.publicKey);
       const sig = await program.methods
         .settle()
         .accounts({
           authority: publicKey,
           invoice: row.publicKey,
           freelancer: row.freelancer,
-          settlement: settlementPda(row.publicKey),
+          settlement,
           usdcMint: MINT,
           vault,
           freelancerUsdc,
@@ -298,6 +353,39 @@ function Desk() {
         })
         .rpc();
       await refresh();
+      const ns = program.account as unknown as {
+        settlement: {
+          fetch: (k: PublicKey) => Promise<{
+            amount: BN;
+            milestoneCount: number;
+            timestamp: BN;
+          }>;
+        };
+      };
+      const invoiceKey = row.publicKey.toBase58();
+      const settlementKey = settlement.toBase58();
+      const loadReceipt = async () => {
+        const s = await ns.settlement.fetch(settlement);
+        setReceipt({
+          status: "ready",
+          invoice: invoiceKey,
+          settlement: settlementKey,
+          amount: BigInt(s.amount.toString()),
+          milestoneCount: s.milestoneCount,
+          timestamp: Number(s.timestamp.toString()),
+          tx: sig,
+        });
+      };
+      try {
+        await loadReceipt();
+      } catch {
+        setReceipt({
+          status: "pending",
+          invoice: invoiceKey,
+          settlement: settlementKey,
+          tx: sig,
+        });
+      }
       return sig;
     });
 
@@ -305,7 +393,8 @@ function Desk() {
     <main className="wrap">
       <p className="lede">
         Freelancer creates. Client gets demo tokens, funds the vault, then accepts
-        each milestone. Either party can settle when the counter is full.
+        each milestone (no tokens move). Either party can settle when the counter is full —
+        that is the lump-sum payout.
       </p>
 
       <div className="row">
@@ -364,17 +453,119 @@ function Desk() {
         </p>
       )}
 
+      {receipt && (
+        <section className="receipt" aria-label="Settlement receipt">
+          <h2>Settlement receipt</h2>
+          {receipt.status === "ready" ? (
+            <p className="meta">
+              <Amount raw={receipt.amount} /> · {receipt.milestoneCount} milestones ·{" "}
+              {new Date(receipt.timestamp * 1000).toISOString()}
+            </p>
+          ) : (
+            <p className="muted">
+              Settlement tx landed; on-chain receipt not loaded yet.{" "}
+              <button
+                className="ghost"
+                type="button"
+                disabled={busy !== null || !program}
+                onClick={() => {
+                  if (!program) return;
+                  void run("receipt", async () => {
+                    const ns = program.account as unknown as {
+                      settlement: {
+                        fetch: (k: PublicKey) => Promise<{
+                          amount: BN;
+                          milestoneCount: number;
+                          timestamp: BN;
+                        }>;
+                      };
+                    };
+                    const s = await ns.settlement.fetch(new PublicKey(receipt.settlement));
+                    setReceipt({
+                      status: "ready",
+                      invoice: receipt.invoice,
+                      settlement: receipt.settlement,
+                      amount: BigInt(s.amount.toString()),
+                      milestoneCount: s.milestoneCount,
+                      timestamp: Number(s.timestamp.toString()),
+                      tx: receipt.tx,
+                    });
+                  });
+                }}
+              >
+                Retry load
+              </button>
+            </p>
+          )}
+          <p className="meta muted">
+            <a href={explorerAddr(receipt.invoice)} target="_blank" rel="noreferrer">
+              Invoice
+            </a>
+            {" · "}
+            <a href={explorerAddr(receipt.settlement)} target="_blank" rel="noreferrer">
+              Settlement
+            </a>
+            {" · "}
+            <a href={explorerTx(receipt.tx)} target="_blank" rel="noreferrer">
+              Tx
+            </a>
+          </p>
+          <button className="ghost" type="button" onClick={() => setReceipt(null)}>
+            Dismiss
+          </button>
+        </section>
+      )}
+
       <section>
-        <h2>Invoices</h2>
-        {rows.length === 0 && (
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <h2>Invoices</h2>
+          <div className="row">
+            <button
+              className={filter === "mine" ? undefined : "ghost"}
+              type="button"
+              onClick={() => setFilter("mine")}
+              disabled={!connected}
+            >
+              My invoices
+            </button>
+            <button
+              className={filter === "all" ? undefined : "ghost"}
+              type="button"
+              onClick={() => setFilter("all")}
+            >
+              Show all (devnet)
+            </button>
+          </div>
+        </div>
+        {!connected && filter === "mine" && (
+          <p className="muted">Connect a wallet to see invoices where you are freelancer or client. Or show all.</p>
+        )}
+        {connected && filter === "mine" && visibleRows.length === 0 && rows.length > 0 && (
+          <p className="muted">No invoices for this wallet. Switch wallet or show all.</p>
+        )}
+        {visibleRows.length === 0 && rows.length === 0 && (
           <p className="muted">None loaded. Create one, or refresh after connecting.</p>
         )}
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
+          const key = row.publicKey.toBase58();
           const total = BigInt(row.amountUsdc.toString()) * BigInt(row.milestoneCount);
-          const mineFreelancer = publicKey?.equals(row.freelancer);
-          const mineClient = publicKey?.equals(row.client) || (row.status === "draft" && connected);
+          const isClient = !!publicKey && !row.client.equals(PublicKey.default) && publicKey.equals(row.client);
+          const isFreelancer = !!publicKey && publicKey.equals(row.freelancer);
+          const canFund = !!publicKey && row.status === "draft" && connected;
+          const canAccept = isClient && row.status === "funded" && row.milestonesAccepted < row.milestoneCount;
+          const canSettle =
+            (isClient || isFreelancer) &&
+            row.status === "funded" &&
+            row.milestonesAccepted === row.milestoneCount;
+          const vault = vaultAta(row.publicKey, MINT);
+          const settlement = settlementPda(row.publicKey);
+          const focused = focusInvoice === key;
           return (
-            <article className="invoice" key={row.publicKey.toBase58()}>
+            <article
+              className={focused ? "invoice focus" : "invoice"}
+              key={key}
+              ref={focused ? focusRef : undefined}
+            >
               <h2>
                 Invoice · <span className="status">{row.status}</span>
               </h2>
@@ -395,40 +586,65 @@ function Desk() {
                     : truncateAddress(row.client.toBase58())}
                 </button>
               </p>
+              <p className="meta muted">
+                <a href={explorerAddr(key)} target="_blank" rel="noreferrer">
+                  Invoice PDA
+                </a>
+                {" · "}
+                <a href={explorerAddr(vault.toBase58())} target="_blank" rel="noreferrer">
+                  Vault ATA
+                </a>
+                {row.status === "settled" && (
+                  <>
+                    {" · "}
+                    <a href={explorerAddr(settlement.toBase58())} target="_blank" rel="noreferrer">
+                      Settlement
+                    </a>
+                  </>
+                )}
+              </p>
               <div className="row">
                 <button
                   type="button"
-                  disabled={!mineClient || row.status !== "draft" || busy !== null}
+                  disabled={!canFund || busy !== null}
                   onClick={() => void fund(row)}
                 >
                   Fund
                 </button>
                 <button
                   type="button"
-                  disabled={
-                    !publicKey ||
-                    row.status !== "funded" ||
-                    busy !== null ||
-                    row.milestonesAccepted >= row.milestoneCount
-                  }
+                  disabled={!canAccept || busy !== null}
                   onClick={() => void accept(row)}
+                  title={
+                    row.status === "funded" && publicKey && !isClient
+                      ? "Switch wallet to the invoice client to accept"
+                      : undefined
+                  }
                 >
                   Accept milestone
                 </button>
                 <button
                   type="button"
-                  disabled={
-                    !publicKey ||
-                    row.status !== "funded" ||
-                    row.milestonesAccepted !== row.milestoneCount ||
-                    busy !== null
-                  }
+                  disabled={!canSettle || busy !== null}
                   onClick={() => void settle(row)}
+                  title={
+                    row.status === "funded" &&
+                    row.milestonesAccepted === row.milestoneCount &&
+                    publicKey &&
+                    !isClient &&
+                    !isFreelancer
+                      ? "Switch wallet to the invoice client or freelancer to settle"
+                      : undefined
+                  }
                 >
                   Settle
                 </button>
               </div>
-              {mineFreelancer && <p className="muted">You are the freelancer on this invoice.</p>}
+              {row.status === "funded" && publicKey && !isClient && row.milestonesAccepted < row.milestoneCount && (
+                <p className="muted">Accept requires the invoice client wallet — switch wallet to accept.</p>
+              )}
+              {isFreelancer && <p className="muted">You are the freelancer on this invoice.</p>}
+              {isClient && <p className="muted">You are the client on this invoice.</p>}
             </article>
           );
         })}
@@ -438,7 +654,8 @@ function Desk() {
 }
 
 function Shell() {
-  const [screen, setScreen] = useState<Screen>("landing");
+  const initialInvoice = useMemo(() => readInvoiceParam(), []);
+  const [screen, setScreen] = useState<Screen>(initialInvoice ? "app" : "landing");
   return (
     <>
       <Header
