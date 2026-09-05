@@ -346,7 +346,7 @@ describe("stable_invoice — M1 + M2 (fund, accept, settle)", () => {
 
   it("settle: while Draft / before fund rejected", async () => {
     await initInvoice(4);
-    await expectFail(settle(4, freelancer), "NotFunded");
+    await expectFail(settle(4, freelancer), ["NotFunded", "AccountNotInitialized"]);
   });
 
   it("settle: before all milestones rejected (2/3 accepted)", async () => {

@@ -140,7 +140,7 @@ pub mod stable_invoice {
             .checked_mul(milestone_count as u64)
             .ok_or(StableInvoiceError::Overflow)?;
         require!(
-            token_account_amount(&ctx.accounts.vault.to_account_info())? == total,
+            ctx.accounts.vault.amount == total,
             StableInvoiceError::InvalidVault
         );
 
@@ -218,15 +218,6 @@ pub struct Invoice {
     pub milestones_accepted: u8,
     pub status: InvoiceStatus,
     pub bump: u8,
-}
-
-fn token_account_amount(account: &AccountInfo) -> Result<u64> {
-    require!(account.data_len() >= 72, StableInvoiceError::InvalidVault);
-    let data = account.try_borrow_data()?;
-    let amt_bytes: [u8; 8] = data[64..72]
-        .try_into()
-        .map_err(|_| error!(StableInvoiceError::InvalidVault))?;
-    Ok(u64::from_le_bytes(amt_bytes))
 }
 
 /// Permanent on-chain settlement record. Seeds: `[b"settlement", invoice.key()]`.
@@ -385,14 +376,13 @@ pub struct Settle<'info> {
     #[account(address = invoice.usdc_mint @ StableInvoiceError::InvalidVault)]
     pub usdc_mint: Account<'info, Mint>,
     /// Escrow vault: invoice-owned USDC ATA (off-curve owner).
-    /// CHECK: address validated against the invoice PDA's ATA derivation.
     #[account(
         mut,
         constraint = vault.key()
             == associated_token::get_associated_token_address(&invoice.key(), &usdc_mint.key())
             @ StableInvoiceError::InvalidVault,
     )]
-    pub vault: UncheckedAccount<'info>,
+    pub vault: Account<'info, TokenAccount>,
     /// CHECK: must be the freelancer's ATA for this mint (created idempotently if empty).
     #[account(
         mut,
