@@ -18,11 +18,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev pkg-config build-essential
-
       - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
@@ -35,8 +30,7 @@ jobs:
 
       - name: Create Solana keypair
         run: |
-          mkdir -p ~/.config/solana
-          solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json --force
+          mkdir -p $HOME/.config/solana && solana-keygen new --no-bip39-passphrase -o $HOME/.config/solana/id.json --force
 
       - name: npm ci
         run: npm ci
