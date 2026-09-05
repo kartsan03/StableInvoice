@@ -1,8 +1,8 @@
 # StableInvoice
 
 Escrowed USDC invoicing for freelancers on Solana. A client funds a program-controlled
-escrow (PDA) upfront; the freelancer gets paid as milestones are accepted, and every
-settlement leaves an on-chain record.
+escrow (PDA) upfront. Accepting a milestone moves no tokens — settle pays one lump sum
+when every milestone is accepted, and writes a permanent on-chain settlement record.
 
 **Status:** M1–M3 shipped on **devnet** (`v0.3.0-demo`). Bankrun **19/19**.
 
@@ -31,7 +31,7 @@ Whoever funds becomes the invoice's client (not fixed at create time).
 | Slice | What | State |
 |---|---|---|
 | M1 | `fund_escrow` + `accept_milestone` + bankrun tests | Done |
-| M2 | `settle` + settlement PDA + Draft→Funded→Accepted→Settled tests | Done |
+| M2 | `settle` + settlement PDA + Draft→Funded→Settled tests | Done |
 | M3 | Devnet deploy + web (create / fund / accept / settle) + public demo | Done |
 
 Not in this slice: dispute/refund UI, CSV export, mainnet-beta, multi-token.
