@@ -6,43 +6,74 @@ on:
   pull_request:
 
 jobs:
-  test:
+  bankrun:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOLANA_VERSION: "4.2.1"
+      ANCHOR_VERSION: "1.1.2"
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libudev-dev pkg-config build-essential
 
-      - name: Install Solana CLI
+      - name: Cache Solana
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/solana/
+            ~/.local/share/solana/
+          key: ${{ runner.os }}-solana-${{ env.SOLANA_VERSION }}
+
+      - name: Install Solana CLI (Agave / Anza)
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
+          solana-keygen new --no-bip39-passphrase --silent --outfile "$HOME/.config/solana/id.json" || true
+
+      - name: Prefer rustup cargo on PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rustc --version
+          cargo --version
+
+      - name: Cache Anchor / AVM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/avm
+            ~/.cargo/bin/anchor
+            ~/.avm
+          key: ${{ runner.os }}-anchor-${{ env.ANCHOR_VERSION }}
 
       - name: Install Anchor CLI
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked --force
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install "${ANCHOR_VERSION}"
+          avm use "${ANCHOR_VERSION}"
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          anchor --version
 
-      - name: Create Solana keypair
-        run: |
-          mkdir -p ~/.config/solana
-          solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json --force
-
-      - name: npm ci
+      - name: Install npm dependencies
         run: npm ci
 
-      - name: Build program
+      - name: Build Anchor program
         run: anchor build
 
-      - name: Bankrun tests
+      - name: Run bankrun tests
         run: npx ts-mocha -p ./tests/tsconfig.json tests/stable-invoice.ts --timeout 100000
