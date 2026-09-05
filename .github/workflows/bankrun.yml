@@ -1,0 +1,36 @@
+name: bankrun
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked --force
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build program
+        run: anchor build
+
+      - name: Bankrun tests
+        run: npx ts-mocha -p ./tests/tsconfig.json tests/stable-invoice.ts --timeout 100000
