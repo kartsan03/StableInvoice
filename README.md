@@ -1,5 +1,7 @@
 # StableInvoice
 
+[![bankrun](https://github.com/kartsan03/StableInvoice/actions/workflows/bankrun.yml/badge.svg)](https://github.com/kartsan03/StableInvoice/actions/workflows/bankrun.yml)
+
 Escrowed USDC invoicing for freelancers on Solana. A client funds a program-controlled
 escrow (PDA) upfront. Accepting a milestone moves no tokens — settle pays one lump sum
 when every milestone is accepted, and writes a permanent on-chain settlement record.
