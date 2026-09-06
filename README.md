@@ -6,7 +6,7 @@ Escrowed USDC invoicing for freelancers on Solana. A client funds a program-cont
 escrow (PDA) upfront. Accepting a milestone moves no tokens — settle pays one lump sum
 when every milestone is accepted, and writes a permanent on-chain settlement record.
 
-**Status:** M1–M3 shipped on **devnet** (`v0.3.0-demo`). Bankrun **19/19**.
+**Status:** M1–M3 on **devnet** (`v0.3.1`). Bankrun **19/19**. Devnet reference — not mainnet.
 
 Demo: https://stableinvoice.vercel.app  
 (devnet only. Phantom or Solflare. Two wallets: freelancer creates, client funds and accepts.)
