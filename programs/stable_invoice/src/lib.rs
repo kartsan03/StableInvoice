@@ -1,9 +1,10 @@
 //! StableInvoice — escrowed USDC invoicing for freelancers.
 //!
+//! M1/M2/M3 on **devnet** (program id in `declare_id!`), bankrun-tested.
 //! M1: initialize_invoice, fund_escrow, accept_milestone
 //! (CPI transfer_checked, status transitions, events).
 //! M2: settle drains the vault into the freelancer ATA (PDA-signed
-//! transfer_checked) and writes a settlement PDA. Not deployed.
+//! transfer_checked) and writes a settlement PDA.
 
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::{self, AssociatedToken};
