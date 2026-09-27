@@ -140,8 +140,10 @@ pub mod stable_invoice {
             .amount_usdc
             .checked_mul(milestone_count as u64)
             .ok_or(StableInvoiceError::Overflow)?;
+        // `>=`, not `==`: anyone can transfer tokens into the vault ATA, and an
+        // exact check would let a 1-unit deposit block settlement forever.
         require!(
-            ctx.accounts.vault.amount == total,
+            ctx.accounts.vault.amount >= total,
             StableInvoiceError::InvalidVault
         );
 
@@ -316,6 +318,9 @@ pub struct FundEscrow<'info> {
             @ StableInvoiceError::InvalidVault,
     )]
     pub vault: UncheckedAccount<'info>,
+    /// Must be the mint the invoice was created with; otherwise the vault check
+    /// above would accept an ATA for any token the client passes in.
+    #[account(address = invoice.usdc_mint @ StableInvoiceError::InvalidMint)]
     pub usdc_mint: Account<'info, Mint>,
     #[account(
         mut,
@@ -417,4 +422,6 @@ pub enum StableInvoiceError {
     MilestonesIncomplete,
     #[msg("Freelancer USDC account must be the freelancer's ATA for this mint")]
     InvalidFreelancerAta,
+    #[msg("Mint does not match the invoice's mint")]
+    InvalidMint,
 }

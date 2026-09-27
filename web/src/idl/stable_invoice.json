@@ -548,6 +548,11 @@
       "code": 6008,
       "name": "InvalidFreelancerAta",
       "msg": "Freelancer USDC account must be the freelancer's ATA for this mint"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidMint",
+      "msg": "Mint does not match the invoice's mint"
     }
   ],
   "types": [
