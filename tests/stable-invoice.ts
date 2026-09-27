@@ -10,6 +10,7 @@ import {
   createInitializeMint2Instruction,
   createAssociatedTokenAccountIdempotentInstruction,
   createMintToInstruction,
+  createTransferInstruction,
 } from "@solana/spl-token";
 import {
   Keypair,
@@ -460,5 +461,75 @@ describe("stable_invoice — M1 + M2 (fund, accept, settle)", () => {
       program.methods.settle().accounts(accounts).preInstructions([uniqueCu()]).signers([freelancer]).rpc(),
       "InvalidFreelancerAta",
     );
+  });
+
+  it("fund_escrow: mint other than the invoice's rejected", async () => {
+    const index = 11;
+    await initInvoice(index);
+
+    // The client mints a token of their own and tries to fund the invoice with it.
+    const fakeMintKp = Keypair.generate();
+    const fakeMint = fakeMintKp.publicKey;
+    const fakeClientAta = getAssociatedTokenAddressSync(fakeMint, client.publicKey);
+    await sendTx(
+      [
+        SystemProgram.createAccount({
+          fromPubkey: payer.publicKey,
+          newAccountPubkey: fakeMint,
+          space: MINT_SIZE,
+          lamports: MINT_RENT,
+          programId: TOKEN_PROGRAM_ID,
+        }),
+        createInitializeMint2Instruction(fakeMint, 6, client.publicKey, null),
+        createAssociatedTokenAccountIdempotentInstruction(
+          payer.publicKey,
+          fakeClientAta,
+          client.publicKey,
+          fakeMint,
+        ),
+        createMintToInstruction(fakeMint, fakeClientAta, client.publicKey, 100_000_000),
+      ],
+      [fakeMintKp, client],
+    );
+
+    const invoice = invoicePda(freelancer.publicKey, index);
+    nextSlot();
+    await expectFail(
+      program.methods
+        .fundEscrow()
+        .accounts({
+          client: client.publicKey,
+          invoice,
+          vault: getAssociatedTokenAddressSync(fakeMint, invoice, true),
+          usdcMint: fakeMint,
+          clientUsdc: fakeClientAta,
+        })
+        .preInstructions([uniqueCu()])
+        .signers([client])
+        .rpc(),
+      "InvalidMint",
+    );
+    const inv = await program.account.invoice.fetch(invoice);
+    expect(inv.status).to.deep.equal({ draft: {} });
+  });
+
+  it("settle: tokens sent straight to the vault do not block settlement", async () => {
+    const index = 12;
+    const total = AMOUNT.toNumber() * MILESTONES;
+    const invoice = invoicePda(freelancer.publicKey, index);
+    const vault = vaultFor(invoice);
+    const before = await tokenAmount(ataFor(freelancer.publicKey));
+
+    await initInvoice(index);
+    await fundEscrow(index);
+    // Anyone can transfer into the vault ATA, so settle must tolerate a surplus.
+    await sendTx([createTransferInstruction(clientAta, vault, client.publicKey, 1)], [client]);
+    await acceptAll(index);
+    await settle(index, freelancer);
+
+    const inv = await program.account.invoice.fetch(invoice);
+    expect(inv.status).to.deep.equal({ settled: {} });
+    expect(await tokenAmount(ataFor(freelancer.publicKey))).to.equal(before + total);
+    expect(await tokenAmount(vault)).to.equal(1);
   });
 });
